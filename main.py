@@ -3,8 +3,9 @@
 # import libraries and modules
 import pygame as pg
 from pygame.sprite import Sprite
-import random
+from random import randint
 import os
+from settings import *
 
 vec = pg.math.Vector2
 
@@ -13,23 +14,6 @@ game_folder = os.path.dirname(__file__)
 img_folder = os.path.join(game_folder, 'images')
 snd_folder = os.path.join(game_folder, 'sounds')
 
-# game settings 
-WIDTH = 360
-HEIGHT = 480
-FPS = 30
-SCORE = 0
-
-# player settings
-PLAYER_JUMP = 30
-PLAYER_GRAV = 1.5
-
-# define colors
-WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-RED = (255, 0, 0)
-GREEN = (0, 255, 0)
-BLUE = (0, 0, 255)
-SKYBLUE = (150, 200, 255)
 
 def draw_text(text, size, color, x, y):
     font_name = pg.font.match_font('arial')
@@ -38,6 +22,18 @@ def draw_text(text, size, color, x, y):
     text_rect = text_surface.get_rect()
     text_rect.midtop = (x,y)
     screen.blit(text_surface, text_rect)
+
+def draw_shield_bar(surf, x, y, pct):
+    if pct < 0:
+        pct = 0
+    BAR_LENGTH = 100
+    BAR_HEIGHT = 10
+    fill = (pct / 100) * BAR_LENGTH
+    outline_rect = pg.Rect(x, y, BAR_LENGTH, BAR_HEIGHT)
+    fill_rect = pg.Rect(x, y, fill, BAR_HEIGHT)
+    pg.draw.rect(surf, GREEN, fill_rect)
+    pg.draw.rect(surf, WHITE, outline_rect, 2)
+
 
 class Player(Sprite):
     def __init__(self):
@@ -51,7 +47,8 @@ class Player(Sprite):
         self.pos = vec(WIDTH/2, HEIGHT/2)
         self.vel = vec(0,0)
         self.acc = vec(0,0)
-        self.cofric = -0.3
+        print(self.rect.center)
+        self.hitpoints = 100
     def controls(self):
         keys = pg.key.get_pressed()
         if keys[pg.K_a]:
@@ -68,15 +65,16 @@ class Player(Sprite):
     def update(self):
         self.acc = vec(0,PLAYER_GRAV)
         self.controls()
-        # friction for side to side 
-        self.acc.x += self.vel.x * self.cofric
-
+        # if friction - apply here
+        self.acc.x += self.vel.x * -0.2
+        # this would only apply when doing a top down video game
+        # self.acc.y += self.vel.y * -0.2
         # equations of motion
         self.vel += self.acc
         self.pos += self.vel + 0.5 * self.acc
-
         self.rect.midbottom = self.pos
-
+        
+        
 # platforms
 
 class Platform(Sprite):
@@ -89,16 +87,43 @@ class Platform(Sprite):
         self.rect.y = y
         print(self.rect.center)
         self.category = category
-        self.speed = 10
+        self.speed = 0
+        if self.category == "moving":
+            self.speed = 5
     def update(self):
         if self.category == "moving":
             self.rect.x += self.speed
-            if self.rect.x + self.rect.w > WIDTH or self.rect.x < 0:
+            if self.rect.x > WIDTH-self.rect.width or self.rect.x < 0:
                 self.speed = -self.speed
-        if self.category == "ice":
-            self.image.fill(WHITE)
+        if self.category == "lava":
+            self.image.fill(ORANGE)
 
-            
+class Mob(Sprite):
+    def __init__(self, x, y, w, h, category):
+        Sprite.__init__(self)
+        self.image = pg.Surface((w, h))
+        self.image.fill(RED)
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
+        print(self.rect.center)
+        self.category = category
+        self.speed = 0
+        if self.category == "moving":
+            self.speed = 20
+    def update(self):
+        if self.category == "moving":
+            self.rect.x += self.speed
+            # check to see if this thing is on one side of the screen or the other
+            if self.rect.x > 50 or self.rect.x < 0:
+                self.speed = -self.speed
+                self.rect.y += self.rect.h
+            # change colors depending on position...
+            if self.rect.x > WIDTH/2:
+                self.image.fill((randint(0,100), randint(0,255), randint(0,255)))
+
+            else:
+                self.image.fill((randint(0,255), randint(0,255), randint(0,100)))
 
 
 
@@ -107,33 +132,36 @@ pg.init()
 pg.mixer.init()
 screen = pg.display.set_mode((WIDTH, HEIGHT))
 pg.display.set_caption("My Game...")
+
 clock = pg.time.Clock()
 
 # create a group for all sprites
 all_sprites = pg.sprite.Group()
 all_platforms = pg.sprite.Group()
+all_mobs = pg.sprite.Group()
 
 # instantiate classes
 player = Player()
-plat = Platform(150, 300, 100, 30, "moving")
-plat1 = Platform(200, 200, 100, 30, "moving")
+all_sprites.add(player)
 
 # add instances to groups
-all_sprites.add(player)
-all_sprites.add(plat)
-all_sprites.add(plat1)
-all_platforms.add(plat)
-all_platforms.add(plat1)
+
+for i in range(0,1):
+    m = Mob(randint(0,WIDTH), randint(0,HEIGHT), 25, 25, "moving")
+    all_sprites.add(m)
+    all_mobs.add(m)
+
+for plat in PLATFORM_LIST:
+    p = Platform(*plat)
+    all_sprites.add(p)
+    all_platforms.add(p)
 
 
 # Game loop
 running = True
-
-
-
 while running:
     # keep the loop running using clock
-    currentfps = clock.tick(FPS)
+    currentFPS = clock.tick(FPS)
         
     for event in pg.event.get():
         # check for closed window
@@ -142,19 +170,16 @@ while running:
     
     ############ Update ##############
     # update all sprites
-    # (the player controls or input happen in player update method)
     all_sprites.update()
-    
+    if player.rect.y > HEIGHT:
+        player.pos = vec(WIDTH/2, HEIGHT/2)
     # this is what prevents the player from falling through the platform when falling down...
     if player.vel.y > 0:
             hits = pg.sprite.spritecollide(player, all_platforms, False)
             if hits:
-                if hits[0].category == "moving":
-                    player.rect.x = hits[0].rect.x
-                    player.pos.y = hits[0].rect.top
-                    player.vel.y = 0
-
-                
+                player.pos.y = hits[0].rect.top
+                player.vel.y = 0
+                player.vel.x = hits[0].speed*1.5
                 
     # this prevents the player from jumping up through a platform
     if player.vel.y < 0:
@@ -167,13 +192,17 @@ while running:
                 player.acc.y = 5
                 player.vel.y = 0
 
+    mhits = pg.sprite.spritecollide(player, all_mobs, False)
+    if mhits:
+        player.hitpoints -= 10
     ############ Draw ################
     # draw the background screen
+    screen.fill(BLACK)
     # draw all sprites
-    screen.fill(SKYBLUE)
     all_sprites.draw(screen)
-    draw_text("FPS: " + str(currentfps), 22, BLACK, WIDTH/2, HEIGHT/10)
-
+    draw_text("FPS: " + str(currentFPS), 22, WHITE, WIDTH/2, HEIGHT/10)
+    draw_text("Hitpoints: " + str(player.hitpoints), 22, WHITE, WIDTH/2, HEIGHT/20)
+    
     # buffer - after drawing everything, flip display
     pg.display.flip()
 
